@@ -1,16 +1,14 @@
 package fuselang.backend.calyx
 
 import scala.math.{BigDecimal, BigInt}
-
-import fuselang.backend.calyx.Calyx._
-import fuselang.Utils._
-import fuselang.common._
-import Syntax._
-import Configuration._
-import CompilerError._
-import fuselang.common.{Configuration => C}
-
-import Helpers._
+import fuselang.backend.calyx.Calyx.*
+import fuselang.Utils.*
+import fuselang.common.*
+import Syntax.*
+import Configuration.*
+import CompilerError.*
+import fuselang.common.Configuration as C
+import Helpers.*
 
 /**
   *  Helper class that gives names to the fields of the output of `emitExpr` and
@@ -253,6 +251,44 @@ private class CalyxBackendHelper {
     case x => throw NotImplemented(s"Type $x not implemented for decls.", x.pos)
   }
 
+  case class FPCell(name: String, inputPorts: Seq[String], outputPort: String, miscPorts: Option[Seq[(String, Port)]] = None)
+
+  def emitPositBinOp(compName: String, e1: Expr, e2: Expr)(implicit store: Store): EmitOutput =
+    val e1Out = emitExpr(e1)
+    val e2Out = emitExpr(e2)
+
+    val cell = compName match {
+      case "add" => FPCell("PositAdd", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 0)))))
+      case "sub" => FPCell("PositAdd", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 1)))))
+      case "lt" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_lt")
+      case "gt" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_gt")
+      case "eq" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_eq")
+      case "mult_pipe" => FPCell("PositMul", Seq("io_num1", "io_num2"), "io_out")
+      case _ => throw NotImplemented(s"Binary operation not implemented for with type posits")
+      //          case "div_pipe"
+      //           case "le" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_lt", "io_eq"))
+      //          case "ge" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_gt", "io_eq"))
+      //          case "neq" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_eq"))
+      //          case "div_pipe"
+    }
+
+    val comp = Cell(genName(compName), CompInst(cell.name, List()), false, List())
+    val struct = List(
+      comp,
+      Assign(e1Out.port, comp.name.port("io_num1")),
+      Assign(e2Out.port, comp.name.port("io_num2"))
+    )
+    val miscPorts = cell.miscPorts.getOrElse(List()).map((name, port) => Assign(port, comp.name.port(name)))
+
+    EmitOutput(
+      comp.name.port(cell.outputPort),
+      None,
+      struct ++ miscPorts ++ e1Out.structure ++ e2Out.structure,
+      for d1 <- e1Out.delay; d2 <- e2Out.delay
+        yield d1 + d2,
+      None
+    )
+
   /** `emitBinop` is a helper function to generate the structure
     *  for `e1 binop e2`. The return type is described in `emitExpr`.
     */
@@ -421,6 +457,23 @@ private class CalyxBackendHelper {
     )
   }
 
+  def isFloatingPointOp(e1: Expr, e2: Expr): Boolean =
+    (e1.typ, e2.typ) match
+      case (Some(_: TFloat), Some(_: TFloat)) => true
+      case (Some(_: TFloat), _) =>
+        throw Impossible(
+          "Cannot perform arithmetic between floating-point and non-floating-point numbers" +
+            s"\nleft: ${Pretty.emitExpr(e1)(false).pretty}" +
+            s"\nright: ${Pretty.emitExpr(e2)(false).pretty}"
+        )
+      case (_, Some(_: TFloat)) =>
+        throw Impossible(
+          "Cannot perform arithmetic between floating-point and non-floating-point numbers" +
+            s"\nleft: ${Pretty.emitExpr(e1)(false).pretty}" +
+            s"\nright: ${Pretty.emitExpr(e2)(false).pretty}"
+        )
+      case _ => false /* Could be valid expr, just not a floating point operation  */
+
   /** `emitExpr(expr, rhsInfo)(implicit store)` calculates the necessary structure
     *  to compute `expr`.
     *  - If rhsInfo is defined then this expression is an LHS. rhsInfo contains
@@ -463,33 +516,40 @@ private class CalyxBackendHelper {
               op.pos
             )
         }
-        op.op match {
-          case "*" =>
-            emitMultiCycleBinop(
-              compName,
-              e1,
-              e2,
-              "out",
-              Stdlib.staticTimingMap.get("mult")
-            )
-          case "/" =>
-            emitMultiCycleBinop(
-              compName,
-              e1,
-              e2,
-              "out_quotient",
-              None
-            )
-          case "%" =>
-            emitMultiCycleBinop(
-              compName,
-              e1,
-              e2,
-              "out_remainder",
-              None
-            )
-          case _ => emitBinop(compName, e1, e2)
-        }
+
+        val floatingPointOp = isFloatingPointOp(e1, e2)
+
+        floatingPointOp match
+          case true =>
+            emitPositBinOp(compName, e1, e2)
+          case false =>
+            op.op match {
+              case "*" =>
+                emitMultiCycleBinop(
+                  compName,
+                  e1,
+                  e2,
+                  "out",
+                  Stdlib.staticTimingMap.get("mult")
+                )
+              case "/" =>
+                emitMultiCycleBinop(
+                  compName,
+                  e1,
+                  e2,
+                  "out_quotient",
+                  None
+                )
+              case "%" =>
+                emitMultiCycleBinop(
+                  compName,
+                  e1,
+                  e2,
+                  "out_remainder",
+                  None
+                )
+              case _ => emitBinop(compName, e1, e2)
+            }
       }
       case EVar(id) =>
         val (cell, calyxVarType) = store
@@ -1088,6 +1148,7 @@ private class CalyxBackendHelper {
       Import("primitives/core.futil") ::
       Import("primitives/memories/seq.futil") ::
         Import("primitives/binary_operators.futil") ::
+        Import("P32.futil") ::
         p.includes.flatMap(_.backends.get(C.Calyx)).map(i => Import(i)).toList
 
     val main = if !c.compilerOpts.contains("no-main") then {
