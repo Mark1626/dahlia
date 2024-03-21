@@ -584,22 +584,40 @@ private class CalyxBackendHelper {
         )
       // Integers don't need adaptors
       case ECast(EInt(v, _), typ) => {
-        val _ = rhsInfo
-        val (typ_b, _) = bitsForType(Some(typ), expr.pos)
-        val const =
-          Cell(
-            genName("const"),
-            Stdlib.constant(typ_b, v),
-            false,
-            List()
-          )
-        EmitOutput(
-          const.name.port("out"),
-          None,
-          List(const),
-          Some(0),
-          None
-        )
+        typ match
+          case _: TFloat =>
+            val (width, _) = bitsForType(Some(typ), expr.pos)
+            val fpconst =
+              Cell(
+                genName("fp_const"),
+                Stdlib.constant(width, v),
+                false,
+                List()
+              )
+            EmitOutput(
+              fpconst.name.port("out"),
+              None,
+              List(fpconst),
+              Some(0),
+              None
+            )
+          case _ =>
+            val _ = rhsInfo
+            val (typ_b, _) = bitsForType(Some(typ), expr.pos)
+            val const =
+              Cell(
+                genName("const"),
+                Stdlib.constant(typ_b, v),
+                false,
+                List()
+              )
+            EmitOutput(
+              const.name.port("out"),
+              None,
+              List(const),
+              Some(0),
+              None
+            )
       }
       case EBool(v) => {
         val const =
