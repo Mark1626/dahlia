@@ -57,6 +57,7 @@ object Syntax:
       case _: TRational => "rational"
       case _: TFloat => "float"
       case _: TDouble => "double"
+      case TPosit(w, es) => s"posit_${w}_${es}"
       case TFixed(t, i, un) => s"${if un then "u" else ""}fix<$t,$i>"
       case TSizedInt(l, un) => s"${if un then "u" else ""}bit<$l>"
       case TStaticInt(s) => s"static($s)"
@@ -85,6 +86,7 @@ object Syntax:
   case class TRational(value: String) extends Type
   case class TFloat() extends Type
   case class TDouble() extends Type
+  case class TPosit(width: Int, es: Int) extends Type
   case class TFixed(ltotal: Int, lint: Int, unsigned: Boolean) extends Type
   case class TFun(args: Seq[Type], ret: Type) extends Type
   case class TRecType(name: Id, fields: Map[Id, Type]) extends Type

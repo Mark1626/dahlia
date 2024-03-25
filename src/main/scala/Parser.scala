@@ -74,6 +74,9 @@ case class Parser(input: String):
           (kw("ufix") ~/ angular(number ~ "," ~ number)).map({
             case (s1, s2) => TFixed(s1, s2, true)
           }) |
+          (kw("posit") ~/ angular(number ~ "," ~ number)).map({
+            case (w, es) => TPosit(w, es)
+          }) |
           iden.map(TAlias(_))
       )
     )

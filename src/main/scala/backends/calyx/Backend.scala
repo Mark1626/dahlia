@@ -461,8 +461,7 @@ private class CalyxBackendHelper {
 
   def isFloatingPointOp(e1: Expr, e2: Expr): (Boolean) =
     (e1.typ, e2.typ) match
-      case (Some(_: TFloat), Some(_: TFloat)) => true
-      case (Some(_: TDouble), Some(_: TDouble)) => true
+      case (Some(_: (TPosit | TDouble | TFloat)), Some(_: (TPosit | TDouble | TFloat))) => true
       case (Some(_: TDouble), _) =>
         throw Impossible(
           "Cannot perform arithmetic between floating-point and non-floating-point numbers" +

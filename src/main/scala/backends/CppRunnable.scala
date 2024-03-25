@@ -38,6 +38,11 @@ private class CppRunnable extends CppLike:
     case _: TFun =>
       throw Impossible("Cannot emit function types")
     case TAlias(n) => value(n)
+    case TPosit(_, _) =>
+      // TODO: This could use universal or the softposit library
+      // The problems is unlike the json library already used in the
+      // C++ backend, there is no single file header for softposit
+      throw Impossible("Cannot emit posits in C++ backed")
 
   def emitArrayDecl(ta: TArray, id: Id) = emitType(ta) <+> text(s"&$id")
 

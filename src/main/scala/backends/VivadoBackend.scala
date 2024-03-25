@@ -147,6 +147,7 @@ private class VivadoBackend(config: Config) extends CppLike:
     case TRecType(n, _) => text(n.toString)
     case _: TFun => throw Impossible("Cannot emit function types")
     case TAlias(n) => text(n.toString)
+    case TPosit(_, _) => throw Impossible("Cannot emit posits in HLS backend")
 
   def emitProg(p: Prog, c: Config): String =
     val layout =
