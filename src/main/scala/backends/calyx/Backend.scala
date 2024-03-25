@@ -256,14 +256,16 @@ private class CalyxBackendHelper {
   def emitPositBinOp(compName: String, e1: Expr, e2: Expr)(implicit store: Store): EmitOutput =
     val e1Out = emitExpr(e1)
     val e2Out = emitExpr(e2)
+    val (bitWidth, _) = bitsForType(e1.typ, e1.pos)
 
+    // TODO: Where and how will I generate a FMA operation
     val cell = compName match {
-      case "add" => FPCell("PositAdd", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 0)))))
-      case "sub" => FPCell("PositAdd", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 1)))))
-      case "lt" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_lt")
-      case "gt" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_gt")
-      case "eq" => FPCell("PositCompare", Seq("io_num1", "io_num2"), "io_eq")
-      case "mult_pipe" => FPCell("PositMul", Seq("io_num1", "io_num2"), "io_out")
+      case "add" => FPCell(s"posit_${bitWidth}_add", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 0)))))
+      case "sub" => FPCell(s"posit_${bitWidth}_add", Seq("io_num1", "io_num2"), "io_out", Some(List(("io_sub", ConstantPort(1, 1)))))
+      case "lt" => FPCell(s"posit_${bitWidth}_compare", Seq("io_num1", "io_num2"), "io_lt")
+      case "gt" => FPCell(s"posit_${bitWidth}_compare", Seq("io_num1", "io_num2"), "io_gt")
+      case "eq" => FPCell(s"posit_${bitWidth}_compare", Seq("io_num1", "io_num2"), "io_eq")
+      case "mult_pipe" => FPCell(s"posit_${bitWidth}_mul", Seq("io_num1", "io_num2"), "io_out")
       case _ => throw NotImplemented(s"Binary operation not implemented for with type posits")
       //          case "div_pipe"
       //           case "le" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_lt", "io_eq"))
@@ -457,9 +459,22 @@ private class CalyxBackendHelper {
     )
   }
 
-  def isFloatingPointOp(e1: Expr, e2: Expr): Boolean =
+  def isFloatingPointOp(e1: Expr, e2: Expr): (Boolean) =
     (e1.typ, e2.typ) match
       case (Some(_: TFloat), Some(_: TFloat)) => true
+      case (Some(_: TDouble), Some(_: TDouble)) => true
+      case (Some(_: TDouble), _) =>
+        throw Impossible(
+          "Cannot perform arithmetic between floating-point and non-floating-point numbers" +
+            s"\nleft: ${Pretty.emitExpr(e1)(false).pretty}" +
+            s"\nright: ${Pretty.emitExpr(e2)(false).pretty}"
+        )
+      case (_, Some(_: TDouble)) =>
+        throw Impossible(
+          "Cannot perform arithmetic between floating-point and non-floating-point numbers" +
+            s"\nleft: ${Pretty.emitExpr(e1)(false).pretty}" +
+            s"\nright: ${Pretty.emitExpr(e2)(false).pretty}"
+        )
       case (Some(_: TFloat), _) =>
         throw Impossible(
           "Cannot perform arithmetic between floating-point and non-floating-point numbers" +
@@ -1166,7 +1181,8 @@ private class CalyxBackendHelper {
       Import("primitives/core.futil") ::
       Import("primitives/memories/seq.futil") ::
         Import("primitives/binary_operators.futil") ::
-        Import("P32.futil") ::
+        Import("posit_32.futil") ::
+        Import("posit_64.futil") ::
         p.includes.flatMap(_.backends.get(C.Calyx)).map(i => Import(i)).toList
 
     val main = if !c.compilerOpts.contains("no-main") then {

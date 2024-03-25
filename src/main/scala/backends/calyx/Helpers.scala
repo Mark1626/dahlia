@@ -39,6 +39,8 @@ object Helpers:
       case Some(_: TBool) => (1, None)
       case Some(_: TVoid) => (0, None)
       case Some(_: TFloat) => (32, None)
+      case Some(_: TDouble) => (64, None)
+      // case Some(TPosit(width, _)) => (width, None)
       case Some(x) =>
         throw NotImplemented(
           s"Calyx cannot infer bitwidth for type $x. Please manually annotate it using a cast expression.",
