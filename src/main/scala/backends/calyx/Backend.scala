@@ -251,7 +251,13 @@ private class CalyxBackendHelper {
     case x => throw NotImplemented(s"Type $x not implemented for decls.", x.pos)
   }
 
-  case class FPCell(name: String, inputPorts: Seq[String], outputPort: String, miscPorts: Option[Seq[(String, Port)]] = None)
+  case class FPCell(
+   name: String,
+   inputPorts: Seq[String],
+   outputPort: String,
+   miscPorts: Option[Seq[(String, Port)]] = None,
+   donePort: Option[(String, Port, String)] = None
+ )
 
   def emitPositBinOp(compName: String, e1: Expr, e2: Expr)(implicit store: Store): EmitOutput =
     val e1Out = emitExpr(e1)
@@ -266,12 +272,24 @@ private class CalyxBackendHelper {
       case "gt" => FPCell(s"posit_${bitWidth}_compare", Seq("io_num1", "io_num2"), "io_gt")
       case "eq" => FPCell(s"posit_${bitWidth}_compare", Seq("io_num1", "io_num2"), "io_eq")
       case "mult_pipe" => FPCell(s"posit_${bitWidth}_mul", Seq("io_num1", "io_num2"), "io_out")
+      case "div_pipe" => FPCell(
+        s"posit_${bitWidth}_divsqrt",
+        Seq("io_num1", "io_num2"),
+        "io_out",
+        Some(List(("io_sqrtOp", ConstantPort(1, 0)))),
+        Some("io_validIn", ConstantPort(1, 1), "io_validOut_div"))
+      // Hack: Create a binop $ to represent sqrt, 2nd expr is ignored by the posit module
+      case "sqrt" => FPCell(
+        s"posit_${bitWidth}_divsqrt",
+        Seq("io_num1", "io_num2"),
+        "io_out",
+        Some(List(("io_sqrtOp", ConstantPort(1, 1)))),
+        Some("io_validIn", ConstantPort(1, 1), "io_validOut_sqrt"))
       case _ => throw NotImplemented(s"Binary operation not implemented for with type posits")
-      //          case "div_pipe"
+
       //           case "le" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_lt", "io_eq"))
       //          case "ge" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_gt", "io_eq"))
       //          case "neq" => FPCell("PositCompare", Seq("io_num1", "io_num2"), Seq("io_eq"))
-      //          case "div_pipe"
     }
 
     val comp = Cell(genName(compName), CompInst(cell.name, List()), false, List())
@@ -282,13 +300,25 @@ private class CalyxBackendHelper {
     )
     val miscPorts = cell.miscPorts.getOrElse(List()).map((name, port) => Assign(port, comp.name.port(name)))
 
+    val donePort = cell.donePort.map((readyPortName, constVal, donePortName) =>
+      Assign(
+        constVal,
+        comp.name.port(readyPortName),
+        Not(Atom(comp.name.port(donePortName)))
+      )
+    )
+
+    val donePortStruct = donePort match
+      case Some(done) => List(done)
+      case None => List()
+
     EmitOutput(
       comp.name.port(cell.outputPort),
-      None,
-      struct ++ miscPorts ++ e1Out.structure ++ e2Out.structure,
+      cell.donePort.map((_: String, _: Port, donePortName: String) => comp.name.port(donePortName)),
+      struct ++ miscPorts ++ donePortStruct ++ e1Out.structure ++ e2Out.structure,
       for d1 <- e1Out.delay; d2 <- e2Out.delay
         yield d1 + d2,
-      None
+      cell.donePort.map((_: String, _: Port, donePortName: String) => (comp.name.port(donePortName), None))
     )
 
   /** `emitBinop` is a helper function to generate the structure
@@ -524,6 +554,7 @@ private class CalyxBackendHelper {
           case ">>" => "rsh"
           case "<<" => "lsh"
           case "^" => "xor"
+          case "$" => "sqrt"
           case x =>
             throw NotImplemented(
               s"Calyx backend does not support '$x' yet.",

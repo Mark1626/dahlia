@@ -188,11 +188,12 @@ case class Parser(input: String):
   def mulOps[K: P]: P[BOp] =
     positioned(
       P(
-        StringIn("/", "*", "%").!
+        StringIn("/", "*", "%", "$").!
       ).map({
         case "/" => NumOp("/", OC.div)
         case "*" => NumOp("*", OC.mul)
         case "%" => NumOp("%", OC.mod)
+        case "$" => NumOp("$", OC.mod)
       })
     )
   def addOps[K: P]: P[BOp] =
